@@ -112,7 +112,7 @@ def compare_benchmarks(
 
 def analyze_by_category(benchmarks: dict[str, dict[str, float]]) -> None:
     """Analyze benchmarks by category."""
-    categories = {
+    categories: dict[str, list[float]] = {
         "numpy": [],
         "pytorch": [],
         "async": [],

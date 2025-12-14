@@ -30,7 +30,7 @@ def profile_memory(func: Callable, *args, **kwargs) -> tuple[Any, dict]:
     final = tracemalloc.take_snapshot()
 
     # Calculate statistics
-    stats = {
+    stats: dict[str, Any] = {
         "current_mb": tracemalloc.get_traced_memory()[0] / 1024 / 1024,
         "peak_mb": tracemalloc.get_traced_memory()[1] / 1024 / 1024,
     }
@@ -67,7 +67,7 @@ def analyze_gc_behavior(func: Callable, iterations: int = 100) -> dict:
     # Get initial GC stats
     gc.collect()
     initial_counts = gc.get_count()
-    initial_stats = gc.get_stats()
+    _initial_stats = gc.get_stats()  # noqa: F841
 
     # Run function multiple times
     for _ in range(iterations):

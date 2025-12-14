@@ -1,1 +1,0 @@
-"""Python Performance Benchmarking Suite."""

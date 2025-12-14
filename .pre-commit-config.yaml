@@ -1,0 +1,48 @@
+repos:
+  # Black - Code formatting
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        language_version: python3
+
+  # isort - Import sorting
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: ["--profile", "black"]
+
+  # Ruff - Fast Python linter
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.2
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+
+  # Pylint - Python linter
+  - repo: https://github.com/pylint-dev/pylint
+    rev: v3.3.2
+    hooks:
+      - id: pylint
+        additional_dependencies: ["pytest", "numpy"]
+
+  # Mypy - Static type checking
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        additional_dependencies: ["pytest", "numpy", "types-requests"]
+        args: ["--ignore-missing-imports"]
+
+  # Zizmor - GitHub Actions security scanner
+  - repo: https://github.com/woodruffw/zizmor-pre-commit
+    rev: v1.0.1
+    hooks:
+      - id: zizmor
+
+  # Hadolint - Dockerfile linter
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
+    hooks:
+      - id: hadolint-docker
