@@ -1,0 +1,164 @@
+name: Python Benchmarks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      full_benchmark:
+        description: 'Run full benchmark suite (slower)'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  UV_SYSTEM_PYTHON: 1
+
+jobs:
+  benchmark:
+    name: Benchmark Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.12"
+          - "3.13"
+          - "3.14"
+          - "3.14t"  # Free-threaded
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: |
+          uv python install ${{ matrix.python-version }}
+          uv venv --python ${{ matrix.python-version }} .venv
+
+      - name: Install dependencies
+        run: |
+          uv pip install pytest pytest-benchmark pytest-asyncio numpy --python .venv/bin/python
+
+      - name: Check Python version and GIL status
+        run: |
+          .venv/bin/python -c "
+          import sys
+          print(f'Python version: {sys.version}')
+          print(f'GIL enabled: {sys._is_gil_enabled()}')
+          "
+
+      - name: Run quick benchmarks (PR)
+        if: github.event_name == 'pull_request'
+        run: |
+          .venv/bin/pytest benchmarks/ \
+            --benchmark-only \
+            --benchmark-json=benchmark_results_${{ matrix.python-version }}.json \
+            --benchmark-min-rounds=3 \
+            --benchmark-max-time=0.5 \
+            -x \
+            -q \
+            --ignore=benchmarks/pytorch/ \
+            2>&1 | tee benchmark_output.txt
+
+      - name: Run full benchmarks (push to main)
+        if: github.event_name == 'push' || github.event.inputs.full_benchmark == 'true'
+        run: |
+          .venv/bin/pytest benchmarks/ \
+            --benchmark-only \
+            --benchmark-json=benchmark_results_${{ matrix.python-version }}.json \
+            --benchmark-min-rounds=5 \
+            -q \
+            --ignore=benchmarks/pytorch/ \
+            2>&1 | tee benchmark_output.txt
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ matrix.python-version }}
+          path: |
+            benchmark_results_*.json
+            benchmark_output.txt
+          retention-days: 30
+
+  compare:
+    name: Compare Results
+    needs: benchmark
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all benchmark results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: benchmark-results-*
+          merge-multiple: true
+
+      - name: Install uv and dependencies
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          source $HOME/.local/bin/env
+          uv pip install --system tabulate
+
+      - name: Generate comparison report
+        run: |
+          python3 << 'EOF'
+          import json
+          import glob
+          from pathlib import Path
+
+          results = {}
+          for f in glob.glob("benchmark_results_*.json"):
+              version = f.replace("benchmark_results_", "").replace(".json", "")
+              with open(f) as fp:
+                  data = json.load(fp)
+                  results[version] = {
+                      b["name"]: b["stats"]["mean"]
+                      for b in data.get("benchmarks", [])
+                  }
+
+          print("# Benchmark Comparison Report\n")
+          print(f"Versions compared: {', '.join(sorted(results.keys()))}\n")
+
+          # Find common benchmarks
+          if results:
+              common = set.intersection(*[set(r.keys()) for r in results.values()])
+              print(f"Common benchmarks: {len(common)}\n")
+
+              # Compare 3.14 vs 3.14t if both exist
+              if "3.14" in results and "3.14t" in results:
+                  print("## GIL vs Free-threaded Comparison (3.14 vs 3.14t)\n")
+
+                  faster_ft = 0
+                  slower_ft = 0
+
+                  for name in sorted(common)[:20]:  # Top 20 for brevity
+                      gil_time = results["3.14"].get(name, 0)
+                      ft_time = results["3.14t"].get(name, 0)
+                      if gil_time and ft_time:
+                          ratio = gil_time / ft_time
+                          status = "🚀" if ratio > 1.1 else ("🐢" if ratio < 0.9 else "➡️")
+                          print(f"- {status} {name.split('::')[-1][:40]}: {ratio:.2f}x")
+                          if ratio > 1.1:
+                              faster_ft += 1
+                          elif ratio < 0.9:
+                              slower_ft += 1
+
+                  print(f"\nSummary: {faster_ft} faster in free-threaded, {slower_ft} slower")
+          EOF
+
+      - name: Create summary
+        run: |
+          echo "## Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Benchmark results have been uploaded as artifacts." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          ls -la benchmark_results_*.json >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No results found"

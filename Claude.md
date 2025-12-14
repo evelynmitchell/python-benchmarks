@@ -38,6 +38,28 @@ uv pip install pre-commit --system
 pre-commit install
 ```
 
+## Multi-Version Python Setup
+
+```bash
+# Install Python versions with uv
+uv python install 3.12 3.13 3.14 3.14t
+
+# Create virtual environments for each version
+uv venv --python 3.14 .venv314
+uv venv --python 3.14t .venv314t  # Free-threaded (no-GIL)
+
+# Install benchmark dependencies
+uv pip install pytest pytest-benchmark pytest-asyncio numpy --python .venv314/bin/python
+uv pip install pytest pytest-benchmark pytest-asyncio numpy --python .venv314t/bin/python
+
+# Run benchmarks with specific version
+.venv314/bin/pytest benchmarks/ --benchmark-only
+.venv314t/bin/pytest benchmarks/ --benchmark-only
+
+# Check GIL status
+.venv314t/bin/python -c "import sys; print(f'GIL enabled: {sys._is_gil_enabled()}')"
+```
+
 ## Project Purpose
 
 Python benchmarking suite for comparing performance across different Python versions and configurations.
